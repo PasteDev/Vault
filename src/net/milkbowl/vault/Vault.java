@@ -77,6 +77,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 
 import net.milkbowl.vault.chat.plugins.Chat_TotalPermissions;
+import net.milkbowl.vault.util.FoliaScheduler;
 
 public class Vault extends JavaPlugin {
 
@@ -94,7 +95,7 @@ public class Vault extends JavaPlugin {
     public void onDisable() {
         // Remove all Service Registrations
         getServer().getServicesManager().unregisterAll(this);
-        Bukkit.getScheduler().cancelTasks(this);
+        FoliaScheduler.cancelTasks(this);
     }
 
     @Override
@@ -115,56 +116,39 @@ public class Vault extends JavaPlugin {
         getCommand("vault-info").setExecutor(this);
         getCommand("vault-convert").setExecutor(this);
         getServer().getPluginManager().registerEvents(new VaultListener(), this);
-        // Schedule to check the version every 30 minutes for an update. This is to update the most recent 
-        // version so if an admin reconnects they will be warned about newer versions.
-        this.getServer().getScheduler().runTask(this, new Runnable() {
-
-            @Override
-            public void run() {
-                // Programmatically set the default permission value cause Bukkit doesn't handle plugin.yml properly for Load order STARTUP plugins
-                org.bukkit.permissions.Permission perm = getServer().getPluginManager().getPermission("vault.update");
-                if (perm == null)
-                {
-                    perm = new org.bukkit.permissions.Permission("vault.update");
-                    perm.setDefault(PermissionDefault.OP);
-                    plugin.getServer().getPluginManager().addPermission(perm);
-                }
-                perm.setDescription("Allows a user or the console to check for vault updates");
-
-                getServer().getScheduler().runTaskTimerAsynchronously(plugin, new Runnable() {
-
-                    @Override
-                    public void run() {
-                        if (getServer().getConsoleSender().hasPermission("vault.update") && getConfig().getBoolean("update-check", true)) {
-                            try {
-                            	log.info("Checking for Updates ... ");
-                                newVersion = updateCheck(currentVersion);
-                                if (newVersion > currentVersion) {
-                                    log.warning("Stable Version: " + newVersionTitle + " is out!" + " You are still running version: " + currentVersionTitle);
-                                    log.warning("Update at: https://dev.bukkit.org/projects/vault");
-                                } else if (currentVersion > newVersion) {
-                                    log.info("Stable Version: " + newVersionTitle + " | Current Version: " + currentVersionTitle);
-                                }
-                            } catch (Exception e) {
-                                // ignore exceptions
-                            }
-                        }
+        registerUpdatePermission();
+        FoliaScheduler.runAsyncRepeating(plugin, () -> {
+            if (getServer().getConsoleSender().hasPermission("vault.update") && getConfig().getBoolean("update-check", true)) {
+                try {
+                    log.info("Checking for Updates ... ");
+                    newVersion = updateCheck(currentVersion);
+                    if (newVersion > currentVersion) {
+                        log.warning("Stable Version: " + newVersionTitle + " is out! You are still running version: " + currentVersionTitle);
+                        log.warning("Update at: https://dev.bukkit.org/projects/vault");
+                    } else if (currentVersion > newVersion) {
+                        log.info("Stable Version: " + newVersionTitle + " | Current Version: " + currentVersionTitle);
                     }
-                }, 0, 432000);
-
+                } catch (Exception ignored) {
+                }
             }
-        });
+        }, 0L, 432000L);
 
-        // Load up the Plugin metrics
         Metrics metrics = new Metrics(this, 887);
         findCustomData(metrics);
 
         log.info(String.format("Enabled Version %s", getDescription().getVersion()));
     }
 
-    /**
-     * Attempts to load Chat Addons
-     */
+    private void registerUpdatePermission() {
+        org.bukkit.permissions.Permission perm = getServer().getPluginManager().getPermission("vault.update");
+        if (perm == null) {
+            perm = new org.bukkit.permissions.Permission("vault.update");
+            perm.setDefault(PermissionDefault.OP);
+            getServer().getPluginManager().addPermission(perm);
+        }
+        perm.setDescription("Allows a user or the console to check for vault updates");
+    }
+
     private void loadChat() {
         // Try to load PermissionsEx
         hookChat("PermissionsEx", Chat_PermissionsEx.class, ServicePriority.Highest, "ru.tehkode.permissions.bukkit.PermissionsEx");
